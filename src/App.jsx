@@ -27,10 +27,12 @@ import {
   clearAllSavedData
 } from './utils/storage';
 
+import defaultTemplate from './assets/template.png';
+
 export default function App() {
-  // 1. Template Image State
+  // 1. Template Image State (bundled directly for 100% reliable loading on GitHub Pages)
   const [templateImg, setTemplateImg] = useState(null);
-  const [templateSrc, setTemplateSrc] = useState('/template.png');
+  const [templateSrc, setTemplateSrc] = useState(defaultTemplate);
 
   // 2. Batch Data State
   const [batchData, setBatchData] = useState(DEFAULT_SAMPLE_DATA);
@@ -85,11 +87,14 @@ export default function App() {
     }
 
     loadTemplateImage().then(savedImg => {
-      if (savedImg) {
+      if (savedImg && savedImg.startsWith('data:image/')) {
         setTemplateSrc(savedImg);
+      } else {
+        setTemplateSrc(defaultTemplate);
       }
       isInitialLoad.current = false;
     }).catch(() => {
+      setTemplateSrc(defaultTemplate);
       isInitialLoad.current = false;
     });
   }, []);
@@ -114,13 +119,20 @@ export default function App() {
 
   // Load Template Image Element whenever templateSrc changes
   useEffect(() => {
+    let active = true;
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => setTemplateImg(img);
+    img.onload = () => {
+      if (active) setTemplateImg(img);
+    };
     img.onerror = () => {
       console.warn("Could not load template from:", templateSrc);
+      if (templateSrc !== defaultTemplate && active) {
+        setTemplateSrc(defaultTemplate);
+      }
     };
     img.src = templateSrc;
+    return () => { active = false; };
   }, [templateSrc]);
 
   // Handle custom image upload and save to storage
@@ -140,8 +152,8 @@ export default function App() {
 
   // Reset image to default template
   const handleResetImage = () => {
-    setTemplateSrc('/template.png');
-    saveTemplateImage('/template.png');
+    setTemplateSrc(defaultTemplate);
+    saveTemplateImage(defaultTemplate);
   };
 
   // Download single active page as PNG
