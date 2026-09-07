@@ -188,11 +188,18 @@ export default function App() {
           <div>
             <h1 className="text-sm sm:text-base font-bold text-white flex items-center gap-2 flex-wrap">
               <span>ระบบสร้างภาพพร้อม QR Code หลายหน้า</span>
-              {/* Creator Credit replacing Batch QR Generator */}
-              <span className="text-[11px] bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full font-medium border border-emerald-500/30 flex items-center gap-1 shadow-sm">
-                <Sparkles size={12} className="text-emerald-400" />
+              {/* Creator Credit with clickable link to GitHub */}
+              <a 
+                href="https://github.com/warehouse24charge/Create-QR-Code-on-Image-"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-emerald-200 px-2.5 py-0.5 rounded-full font-medium border border-emerald-500/30 hover:border-emerald-500/50 flex items-center gap-1 shadow-sm transition group cursor-pointer"
+                title="คลิกเพื่อไปยัง GitHub ของโปรเจกต์"
+              >
+                <Sparkles size={12} className="text-emerald-400 group-hover:rotate-12 transition-transform" />
                 <span>สร้างโดย นาย เกรียงไกร เกตุรักษา</span>
-              </span>
+                <ExternalLink size={10} className="text-emerald-400/70 ml-0.5" />
+              </a>
             </h1>
             <p className="text-[11px] text-slate-400 hidden sm:block">
               คลิกลากจัดตำแหน่ง QR Code ได้อิสระ พร้อมข้อความใต้ภาพ และสั่งพิมพ์หลายหน้าได้ทันที (บันทึกข้อมูลอัตโนมัติ)
@@ -302,10 +309,17 @@ export default function App() {
       {/* Footer with Creator Credit */}
       <footer className="no-print bg-slate-900 border-t border-slate-800 px-4 py-1.5 text-center text-xs text-slate-400 flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px]">ระบบสร้างภาพพร้อม QR Code หลายหน้า • ข้อมูลและรูปภาพบันทึกในเครื่องอัตโนมัติ (Local Storage)</span>
-        <div className="flex items-center gap-1.5 text-emerald-400 font-medium text-xs">
+        <a
+          href="https://github.com/warehouse24charge/Create-QR-Code-on-Image-"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 font-medium text-xs transition cursor-pointer"
+          title="คลิกเพื่อไปยัง GitHub ของโปรเจกต์"
+        >
           <Sparkles size={12} />
           <span>สร้างโดย นาย เกรียงไกร เกตุรักษา</span>
-        </div>
+          <ExternalLink size={11} className="text-emerald-400/80" />
+        </a>
       </footer>
 
       {/* 3. Multi-page Print & Export Modal */}
