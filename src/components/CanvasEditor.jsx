@@ -339,9 +339,16 @@ export default function CanvasEditor({
               <ZoomIn size={13} />
             </button>
             <button 
+              onClick={() => setScale(1.0)} 
+              className="px-1.5 py-0.5 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 rounded text-[11px] font-bold font-mono transition" 
+              title="ดูขนาดจริง 100% (ความคมชัดเท่าต้นฉบับ)"
+            >
+              100%
+            </button>
+            <button 
               onClick={updateScale} 
               className="p-1 hover:bg-slate-700 text-slate-300 rounded" 
-              title="พอดีจอ"
+              title="ย่อพอดีจอ"
             >
               <RotateCcw size={12} />
             </button>
@@ -367,6 +374,9 @@ export default function CanvasEditor({
               src={templateImg.src}
               alt="Template"
               className="w-full h-full object-contain pointer-events-none rounded shadow-lg border border-slate-800/80 block"
+              style={{
+                imageRendering: '-webkit-optimize-contrast',
+              }}
               draggable={false}
             />
 
@@ -401,6 +411,7 @@ export default function CanvasEditor({
                     height: `${qrConfig.size * scale}px`,
                     minWidth: `${qrConfig.size * scale}px`,
                     minHeight: `${qrConfig.size * scale}px`,
+                    imageRendering: 'pixelated',
                   }}
                   className="pointer-events-none block"
                 />

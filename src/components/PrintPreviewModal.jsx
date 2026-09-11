@@ -24,6 +24,7 @@ export default function PrintPreviewModal({
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, status: '' });
   const [selectedPreview, setSelectedPreview] = useState(null);
+  const [exportScale, setExportScale] = useState(2); // 1 = 100% ต้นฉบับ, 2 = HD 2x, 3 = 300 DPI
 
   useEffect(() => {
     if (!isOpen || !templateImg) return;
@@ -41,7 +42,8 @@ export default function PrintPreviewModal({
         if (isMounted) {
           setProgress({ current: curr, total, status: `กำลังสร้างหน้า ${curr} / ${total}` });
         }
-      }
+      },
+      exportScale
     ).then((pages) => {
       if (isMounted) {
         setRenderedPages(pages);
@@ -53,17 +55,17 @@ export default function PrintPreviewModal({
     });
 
     return () => { isMounted = false; };
-  }, [isOpen, templateImg, batchData, qrConfig, textConfig]);
+  }, [isOpen, templateImg, batchData, qrConfig, textConfig, exportScale]);
 
   if (!isOpen) return null;
 
   const handleExportPDF = async () => {
     setLoading(true);
-    setProgress({ current: 0, total: batchData.length, status: 'กำลังสร้างเอกสาร PDF...' });
+    setProgress({ current: 0, total: batchData.length, status: 'กำลังสร้างเอกสาร PDF คุณภาพสูง (Lossless)...' });
     try {
       await exportToPDF(templateImg, batchData, qrConfig, textConfig, (curr, total) => {
         setProgress({ current: curr, total, status: `กำลังเพิ่มหน้า ${curr} / ${total} ลงใน PDF` });
-      });
+      }, exportScale);
     } catch (e) {
       alert('เกิดข้อผิดพลาดในการสร้าง PDF: ' + e.message);
     } finally {
@@ -73,11 +75,11 @@ export default function PrintPreviewModal({
 
   const handleExportZIP = async () => {
     setLoading(true);
-    setProgress({ current: 0, total: batchData.length, status: 'กำลังรวมไฟล์รูปภาพ ZIP...' });
+    setProgress({ current: 0, total: batchData.length, status: 'กำลังรวมไฟล์รูปภาพ PNG คุณภาพสูง...' });
     try {
       await exportToZIP(templateImg, batchData, qrConfig, textConfig, (curr, total) => {
-        setProgress({ current: curr, total, status: `กำลังบีบอัดรูปภาพหน้า ${curr} / ${total}` });
-      });
+        setProgress({ current: curr, total, status: `กำลังบันทึกรูปภาพหน้า ${curr} / ${total}` });
+      }, exportScale);
     } catch (e) {
       alert('เกิดข้อผิดพลาดในการรวม ZIP: ' + e.message);
     } finally {
@@ -100,27 +102,42 @@ export default function PrintPreviewModal({
                 {batchData.length} หน้า
               </span>
             </h2>
-            <p className="text-xs text-slate-400">ตรวจสอบความถูกต้องก่อนสั่งพิมพ์ หรือเลือกส่งออกเป็นไฟล์ PDF และ ZIP</p>
+            <p className="text-xs text-slate-400">ภาพคมชัดเท่าต้นฉบับ 100% พร้อมตัวเลือกส่งออก PDF และ ZIP คุณภาพสูง</p>
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Action Buttons & Quality Selector */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Quality Selector */}
+          <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 text-xs">
+            <span className="text-slate-400 font-medium">ความละเอียด:</span>
+            <select
+              value={exportScale}
+              onChange={(e) => setExportScale(Number(e.target.value))}
+              className="bg-slate-900 text-emerald-400 font-semibold text-xs rounded-lg px-2 py-1 border border-slate-700 outline-none cursor-pointer hover:border-emerald-500 transition"
+              title="เลือกระดับความละเอียดของภาพและเอกสารที่ส่งออก"
+            >
+              <option value={1}>1x เท่าต้นฉบับ 100% (Lossless)</option>
+              <option value={2}>2x คมชัดสูง HD (แนะนำ)</option>
+              <option value={3}>3x คมชัดสูงสุด (300 DPI สำหรับพิมพ์ A4)</option>
+            </select>
+          </div>
+
           <button
-            onClick={onTriggerPrint}
+            onClick={() => onTriggerPrint(exportScale)}
             disabled={loading}
             className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs sm:text-sm font-semibold rounded-xl transition shadow-lg shadow-emerald-950 disabled:opacity-50"
             title="เปิดหน้าต่างสั่งพิมพ์ของเบราว์เซอร์สำหรับพิมพ์ทุกหน้า"
           >
             <Printer size={16} />
-            <span>พิมพ์ออกกระดาษ (Print All)</span>
+            <span>พิมพ์ออกกระดาษ</span>
           </button>
 
           <button
             onClick={handleExportPDF}
             disabled={loading}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs sm:text-sm font-semibold rounded-xl transition shadow-lg shadow-blue-950 disabled:opacity-50"
-            title="บันทึกเป็นไฟล์ PDF รวมทุกหน้า"
+            title="บันทึกเป็นไฟล์ PDF รวมทุกหน้า (PNG Lossless ไม่แตก)"
           >
             <FileDown size={16} />
             <span className="hidden sm:inline">ดาวน์โหลด</span> PDF
@@ -130,7 +147,7 @@ export default function PrintPreviewModal({
             onClick={handleExportZIP}
             disabled={loading}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-500 active:bg-purple-700 text-white text-xs sm:text-sm font-semibold rounded-xl transition shadow-lg shadow-purple-950 disabled:opacity-50"
-            title="บันทึกเป็นไฟล์ ZIP รวมภาพทุกหน้า"
+            title="บันทึกเป็นไฟล์ ZIP รวมภาพทุกหน้า (PNG คมชัดสูงสุด)"
           >
             <Archive size={16} />
             <span className="hidden sm:inline">ดาวน์โหลด</span> ZIP

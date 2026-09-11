@@ -9,10 +9,11 @@ import { saveAs } from 'file-saver';
 const qrCache = new Map();
 
 /**
- * Generate a QR Code as an Image element
+ * Generate a high-resolution QR Code as an Image element
  */
 export async function generateQRImage(text, options = {}) {
-  const cacheKey = `${text}_${options.errorCorrectionLevel || 'H'}_${options.color?.dark || '#000000'}_${options.color?.light || '#ffffff'}`;
+  const targetWidth = Math.max(options.width || 800, 800);
+  const cacheKey = `${text}_${options.errorCorrectionLevel || 'H'}_${options.color?.dark || '#000000'}_${options.color?.light || '#ffffff'}_${targetWidth}`;
   if (qrCache.has(cacheKey)) {
     return qrCache.get(cacheKey);
   }
@@ -20,7 +21,7 @@ export async function generateQRImage(text, options = {}) {
   const qrDataUrl = await QRCode.toDataURL(text, {
     errorCorrectionLevel: options.errorCorrectionLevel || 'H',
     margin: options.margin !== undefined ? options.margin : 1,
-    width: options.width || 400,
+    width: targetWidth,
     color: {
       dark: options.color?.dark || '#000000',
       light: options.color?.light || '#ffffff'
@@ -46,7 +47,6 @@ function drawRoundedRect(ctx, x, y, width, height, radius) {
   if (ctx.roundRect) {
     ctx.roundRect(x, y, width, height, radius);
   } else {
-    // Fallback for older browsers
     const r = Math.min(radius, width / 2, height / 2);
     ctx.moveTo(x + r, y);
     ctx.lineTo(x + width - r, y);
@@ -62,48 +62,63 @@ function drawRoundedRect(ctx, x, y, width, height, radius) {
 }
 
 /**
- * Render a single page with template image, QR code, and bottom text onto a canvas
+ * Render a single page with full original sharpness or high-definition scaling (Super-Sampling)
+ * @param {HTMLCanvasElement} canvas Target canvas
+ * @param {HTMLImageElement} templateImage Source template image
+ * @param {Object} rowData { link, text }
+ * @param {Object} qrConfig QR placement & style
+ * @param {Object} textConfig Text style
+ * @param {number} scale Resolution multiplier (1 = original size, 2 = 2x HD, 3 = 3x Ultra HD 300 DPI)
  */
-export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfig, textConfig) {
+export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfig, textConfig, scale = 1) {
   if (!templateImage || !canvas) return;
 
-  // Ensure fonts are loaded for canvas text rendering
+  // Ensure web fonts are ready for crisp text rendering
   if (document.fonts && document.fonts.ready) {
     try {
       await document.fonts.ready;
     } catch (e) {
-      // ignore font loading error
+      // ignore
     }
   }
 
-  const width = templateImage.naturalWidth || templateImage.width || 723;
-  const height = templateImage.naturalHeight || templateImage.height || 1024;
+  const baseW = templateImage.naturalWidth || templateImage.width || 723;
+  const baseH = templateImage.naturalHeight || templateImage.height || 1024;
+
+  const width = Math.round(baseW * scale);
+  const height = Math.round(baseH * scale);
 
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, width, height);
 
-  // 1. Draw base template image
+  // Use highest-quality image smoothing for the base poster image
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  // 1. Draw base template image at full resolution
   ctx.drawImage(templateImage, 0, 0, width, height);
 
   if (!rowData || !rowData.link) return;
 
-  // 2. Generate QR code image
+  // Scale all coordinates proportionally
+  const qrX = Math.round(qrConfig.x * scale);
+  const qrY = Math.round(qrConfig.y * scale);
+  const qrSize = Math.round(qrConfig.size * scale);
+  const padding = Math.round((qrConfig.cardPadding || 0) * scale);
+  const borderRadius = Math.round((qrConfig.borderRadius || 0) * scale);
+
+  // 2. Generate high-resolution QR code
   const qrImg = await generateQRImage(rowData.link, {
     errorCorrectionLevel: qrConfig.errorCorrection || 'H',
     margin: qrConfig.qrMargin !== undefined ? qrConfig.qrMargin : 1,
+    width: Math.max(qrSize, 800),
     color: {
       dark: qrConfig.qrColor || '#000000',
       light: '#ffffff'
     }
   });
-
-  const qrX = qrConfig.x;
-  const qrY = qrConfig.y;
-  const qrSize = qrConfig.size;
-  const padding = qrConfig.cardPadding || 0;
-  const borderRadius = qrConfig.borderRadius || 0;
 
   // Calculate card bounds
   let cardX = qrX - padding;
@@ -112,10 +127,10 @@ export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfi
   let cardH = qrSize + padding * 2;
 
   const showText = textConfig.enabled && rowData.text;
-  let textY = qrY + qrSize + (textConfig.spacing || 8);
+  const fSize = Math.max(1, textConfig.fontSize !== undefined ? textConfig.fontSize : 15) * scale;
+  const spacing = (textConfig.spacing !== undefined ? textConfig.spacing : 4) * scale;
+  let textY = qrY + qrSize + spacing;
 
-  // Set text font to measure text width
-  const fSize = Math.max(1, textConfig.fontSize !== undefined ? textConfig.fontSize : 15);
   ctx.font = `${textConfig.fontWeight || '600'} ${fSize}px ${textConfig.fontFamily || 'Prompt'}, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
@@ -129,7 +144,7 @@ export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfi
       cardW += extraWidthNeeded;
     }
     const textHeight = fSize * 1.3;
-    cardH = (qrSize + padding * 2) + (textConfig.spacing || 4) + textHeight;
+    cardH = (qrSize + padding * 2) + spacing + textHeight;
   }
 
   // 3. Draw Card Background if enabled
@@ -137,25 +152,28 @@ export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfi
     ctx.save();
     ctx.fillStyle = qrConfig.bgColor || '#ffffff';
     if (qrConfig.boxShadow) {
-      ctx.shadowColor = 'rgba(0,0,0,0.15)';
-      ctx.shadowBlur = 10;
-      ctx.shadowOffsetY = 4;
+      ctx.shadowColor = 'rgba(0,0,0,0.18)';
+      ctx.shadowBlur = 10 * scale;
+      ctx.shadowOffsetY = 4 * scale;
     }
     drawRoundedRect(ctx, cardX, cardY, cardW, cardH, borderRadius);
     ctx.fill();
 
     if (qrConfig.borderWidth > 0) {
       ctx.strokeStyle = qrConfig.borderColor || '#e2e8f0';
-      ctx.lineWidth = qrConfig.borderWidth;
+      ctx.lineWidth = qrConfig.borderWidth * scale;
       ctx.stroke();
     }
     ctx.restore();
   }
 
-  // 4. Draw QR Code
+  // 4. Draw QR Code with crisp, pixel-perfect edges (no blurry smoothing on QR pixels)
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
   ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+  ctx.restore();
 
-  // 5. Draw Text below QR Code
+  // 5. Draw Text below QR Code with crystal clear rendering
   if (showText) {
     ctx.save();
     ctx.font = `${textConfig.fontWeight || '600'} ${fSize}px ${textConfig.fontFamily || 'Prompt'}, sans-serif`;
@@ -163,7 +181,6 @@ export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfi
     ctx.textBaseline = 'top';
     ctx.fillStyle = textConfig.color || '#1e293b';
 
-    // Center text under the QR code
     const centerX = qrX + qrSize / 2;
     ctx.fillText(rowData.text, centerX, textY);
     ctx.restore();
@@ -171,15 +188,15 @@ export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfi
 }
 
 /**
- * Render all pages and return data URLs
+ * Render all pages and return data URLs at high definition
  */
-export async function renderAllPages(templateImage, batchData, qrConfig, textConfig, onProgress) {
+export async function renderAllPages(templateImage, batchData, qrConfig, textConfig, onProgress, scale = 2) {
   const results = [];
   const offscreenCanvas = document.createElement('canvas');
 
   for (let i = 0; i < batchData.length; i++) {
     const row = batchData[i];
-    await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig);
+    await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig, scale);
     const dataUrl = offscreenCanvas.toDataURL('image/png', 1.0);
     results.push({
       index: i + 1,
@@ -197,12 +214,12 @@ export async function renderAllPages(templateImage, batchData, qrConfig, textCon
 }
 
 /**
- * Export all pages to a multi-page PDF
+ * Export all pages to a multi-page PDF with 100% lossless PNG quality
  */
-export async function exportToPDF(templateImage, batchData, qrConfig, textConfig, onProgress) {
-  const width = templateImage.naturalWidth || 723;
-  const height = templateImage.naturalHeight || 1024;
-  const isLandscape = width > height;
+export async function exportToPDF(templateImage, batchData, qrConfig, textConfig, onProgress, scale = 2) {
+  const baseW = templateImage.naturalWidth || 723;
+  const baseH = templateImage.naturalHeight || 1024;
+  const isLandscape = baseW > baseH;
 
   // A4 dimensions in mm: 210 x 297
   const pdf = new jsPDF({
@@ -223,11 +240,14 @@ export async function exportToPDF(templateImage, batchData, qrConfig, textConfig
     }
 
     const row = batchData[i];
-    await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig);
-    const imgData = offscreenCanvas.toDataURL('image/jpeg', 0.95);
+    // Render at high resolution
+    await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig, scale);
+
+    // Use lossless PNG to preserve 100% original sharpness without JPEG compression artifacts
+    const imgData = offscreenCanvas.toDataURL('image/png');
 
     // Calculate aspect fit inside A4 page
-    const imgAspect = width / height;
+    const imgAspect = baseW / baseH;
     const pageAspect = pdfWidth / pdfHeight;
 
     let renderW, renderH, renderX, renderY;
@@ -243,29 +263,30 @@ export async function exportToPDF(templateImage, batchData, qrConfig, textConfig
       renderY = 0;
     }
 
-    pdf.addImage(imgData, 'JPEG', renderX, renderY, renderW, renderH, undefined, 'FAST');
+    // Use SLOW for highest quality lossless image embedding in jsPDF
+    pdf.addImage(imgData, 'PNG', renderX, renderY, renderW, renderH, undefined, 'SLOW');
 
     if (onProgress) {
       onProgress(i + 1, batchData.length);
     }
   }
 
-  pdf.save(`QR_Batch_Pages_${Date.now()}.pdf`);
+  pdf.save(`QR_Batch_Pages_HQ_${Date.now()}.pdf`);
 }
 
 /**
- * Export all pages as images inside a ZIP file
+ * Export all pages as high-resolution PNG images inside a ZIP file
  */
-export async function exportToZIP(templateImage, batchData, qrConfig, textConfig, onProgress) {
+export async function exportToZIP(templateImage, batchData, qrConfig, textConfig, onProgress, scale = 2) {
   const zip = new JSZip();
   const offscreenCanvas = document.createElement('canvas');
 
   for (let i = 0; i < batchData.length; i++) {
     const row = batchData[i];
-    await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig);
+    await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig, scale);
 
-    // Convert canvas to blob
-    const blob = await new Promise((resolve) => offscreenCanvas.toBlob(resolve, 'image/png'));
+    // Convert canvas to lossless PNG blob
+    const blob = await new Promise((resolve) => offscreenCanvas.toBlob(resolve, 'image/png', 1.0));
     const safeText = (row.text || `item_${i+1}`).replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `page_${String(i + 1).padStart(3, '0')}_${safeText}.png`;
 
@@ -276,6 +297,6 @@ export async function exportToZIP(templateImage, batchData, qrConfig, textConfig
     }
   }
 
-  const content = await zip.generateAsync({ type: 'blob' });
-  saveAs(content, `QR_Batch_Images_${Date.now()}.zip`);
+  const content = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  saveAs(content, `QR_Batch_Images_HQ_${Date.now()}.zip`);
 }

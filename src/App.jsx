@@ -156,12 +156,13 @@ export default function App() {
     saveTemplateImage(defaultTemplate);
   };
 
-  // Download single active page as PNG
-  const handleDownloadCurrent = async () => {
+  // Download single active page as PNG with 100% original quality
+  const handleDownloadCurrent = async (scale = 1) => {
     if (!templateImg) return;
     const canvas = document.createElement('canvas');
     const currentRow = batchData[currentIndex] || { link: '', text: '' };
-    await renderPageToCanvas(canvas, templateImg, currentRow, qrConfig, textConfig);
+    // scale = 1 ensures 100% pixel-for-pixel fidelity to the original template
+    await renderPageToCanvas(canvas, templateImg, currentRow, qrConfig, textConfig, scale);
     const link = document.createElement('a');
     const safeName = (currentRow.text || `page_${currentIndex + 1}`).replace(/[^a-zA-Z0-9_-]/g, '_');
     link.download = `QR_${safeName}.png`;
@@ -170,11 +171,12 @@ export default function App() {
   };
 
   // Prepare and trigger browser print for all pages
-  const handleTriggerPrint = async () => {
+  const handleTriggerPrint = async (scale = 2) => {
     if (!templateImg || batchData.length === 0) return;
     setIsPreparingPrint(true);
     try {
-      const pages = await renderAllPages(templateImg, batchData, qrConfig, textConfig);
+      const printScale = typeof scale === 'number' ? scale : 2;
+      const pages = await renderAllPages(templateImg, batchData, qrConfig, textConfig, null, printScale);
       setPrintPages(pages);
 
       // Allow DOM to update before opening print dialog
