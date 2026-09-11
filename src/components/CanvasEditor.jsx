@@ -117,9 +117,9 @@ export default function CanvasEditor({
         const deltaY = (e.clientY - resizeStart.mouseY) / scale;
         const delta = Math.max(deltaX, deltaY);
 
-        // Allow shrinking down to 10px
+        // Allow shrinking down to 10px, constrained within image
         let newSize = Math.round(resizeStart.initialSize + delta);
-        newSize = Math.max(10, Math.min(newSize, Math.min(imgWidth, imgHeight) - 10));
+        newSize = Math.max(10, Math.min(newSize, Math.min(imgWidth - qrConfig.x, imgHeight - qrConfig.y)));
 
         setQrConfig(prev => ({ ...prev, size: newSize }));
       }
@@ -138,7 +138,7 @@ export default function CanvasEditor({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isResizing, dragStart, resizeStart, scale, imgWidth, imgHeight, qrConfig.size, setQrConfig]);
+  }, [isDragging, isResizing, dragStart, resizeStart, scale, imgWidth, imgHeight, qrConfig.x, qrConfig.y, qrConfig.size, setQrConfig]);
 
   // Keyboard arrow keys for pixel-perfect nudging
   useEffect(() => {
@@ -165,6 +165,7 @@ export default function CanvasEditor({
 
   // Touch handlers for mobile / tablets
   const handleTouchStart = (e) => {
+    if (e.target.closest('.resize-handle')) return; // ignore if clicking resize
     if (e.touches.length === 1) {
       const touch = e.touches[0];
       setIsDragging(true);
@@ -177,22 +178,47 @@ export default function CanvasEditor({
     }
   };
 
-  const handleTouchMove = (e) => {
-    if (isDragging && e.touches.length === 1) {
+  const handleResizeTouchStart = (e) => {
+    e.stopPropagation();
+    if (e.touches.length === 1) {
       const touch = e.touches[0];
-      const deltaX = (touch.clientX - dragStart.mouseX) / scale;
-      const deltaY = (touch.clientY - dragStart.mouseY) / scale;
-
-      let newX = Math.round(dragStart.initialX + deltaX);
-      let newY = Math.round(dragStart.initialY + deltaY);
-      newX = Math.max(0, Math.min(newX, imgWidth - qrConfig.size));
-      newY = Math.max(0, Math.min(newY, imgHeight - qrConfig.size));
-
-      setQrConfig(prev => ({ ...prev, x: newX, y: newY }));
+      setIsResizing(true);
+      setResizeStart({
+        mouseX: touch.clientX,
+        mouseY: touch.clientY,
+        initialSize: qrConfig.size
+      });
     }
   };
 
-  const handleTouchEnd = () => setIsDragging(false);
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      if (isResizing) {
+        const deltaX = (touch.clientX - resizeStart.mouseX) / scale;
+        const deltaY = (touch.clientY - resizeStart.mouseY) / scale;
+        const delta = Math.max(deltaX, deltaY);
+        let newSize = Math.round(resizeStart.initialSize + delta);
+        newSize = Math.max(10, Math.min(newSize, Math.min(imgWidth - qrConfig.x, imgHeight - qrConfig.y)));
+        setQrConfig(prev => ({ ...prev, size: newSize }));
+      } else if (isDragging) {
+        const deltaX = (touch.clientX - dragStart.mouseX) / scale;
+        const deltaY = (touch.clientY - dragStart.mouseY) / scale;
+
+        let newX = Math.round(dragStart.initialX + deltaX);
+        let newY = Math.round(dragStart.initialY + deltaY);
+        newX = Math.max(0, Math.min(newX, imgWidth - qrConfig.size));
+        newY = Math.max(0, Math.min(newY, imgHeight - qrConfig.size));
+
+        setQrConfig(prev => ({ ...prev, x: newX, y: newY }));
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+    setIsResizing(false);
+  };
 
   // Quick Alignments
   const centerHorizontally = () => {
@@ -220,9 +246,6 @@ export default function CanvasEditor({
 
   // Card box dimensions calculation
   const paddingVal = qrConfig.hasBg ? qrConfig.cardPadding : 0;
-  const cardWidth = qrConfig.envelopText 
-    ? 'fit-content'
-    : `${(qrConfig.size + paddingVal * 2) * scale}px`;
 
   return (
     <div className="flex flex-col h-full bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
@@ -363,7 +386,7 @@ export default function CanvasEditor({
       >
         {templateImg ? (
           <div 
-            className="relative shadow-2xl transition-transform origin-center"
+            className="relative shadow-2xl origin-center"
             style={{
               width: `${imgWidth * scale}px`,
               height: `${imgHeight * scale}px`,
@@ -373,14 +396,14 @@ export default function CanvasEditor({
             <img
               src={templateImg.src}
               alt="Template"
-              className="w-full h-full object-contain pointer-events-none rounded shadow-lg border border-slate-800/80 block"
+              className="w-full h-full block pointer-events-none rounded shadow-lg select-none"
               style={{
                 imageRendering: '-webkit-optimize-contrast',
               }}
               draggable={false}
             />
 
-            {/* Draggable & Resizable QR Code Box */}
+            {/* Draggable & Resizable QR Code Box (Anchored to prevent shifting on resize/zoom) */}
             <div
               onMouseDown={handleMouseDown}
               onTouchStart={handleTouchStart}
@@ -388,9 +411,11 @@ export default function CanvasEditor({
               onTouchEnd={handleTouchEnd}
               style={{
                 position: 'absolute',
-                left: `${(qrConfig.x - (qrConfig.hasBg ? qrConfig.cardPadding : 0)) * scale}px`,
+                left: `${(qrConfig.x + qrConfig.size / 2) * scale}px`,
                 top: `${(qrConfig.y - (qrConfig.hasBg ? qrConfig.cardPadding : 0)) * scale}px`,
-                width: cardWidth,
+                transform: 'translateX(-50%)',
+                minWidth: `${(qrConfig.size + paddingVal * 2) * scale}px`,
+                width: qrConfig.envelopText ? 'max-content' : `${(qrConfig.size + paddingVal * 2) * scale}px`,
                 padding: qrConfig.hasBg ? `${qrConfig.cardPadding * scale}px` : '0px',
                 borderRadius: qrConfig.hasBg ? `${qrConfig.borderRadius * scale}px` : '0px',
                 backgroundColor: qrConfig.hasBg ? (qrConfig.bgColor || '#ffffff') : 'transparent',
@@ -398,34 +423,46 @@ export default function CanvasEditor({
                 cursor: isDragging ? 'grabbing' : 'grab',
                 border: isDragging ? '2px dashed #10b981' : (qrConfig.hasBg ? '1px solid transparent' : '1px dashed rgba(16,185,129,0.3)'),
               }}
-              className="group transition-shadow select-none flex flex-col items-center justify-center hover:border-emerald-500/70"
+              className="group select-none flex flex-col items-center justify-center hover:border-emerald-500/70"
             >
-              {/* QR Code Image Preview */}
-              {previewQrUrl ? (
-                <img
-                  src={previewQrUrl}
-                  alt="QR"
-                  draggable={false}
-                  style={{
-                    width: `${qrConfig.size * scale}px`,
-                    height: `${qrConfig.size * scale}px`,
-                    minWidth: `${qrConfig.size * scale}px`,
-                    minHeight: `${qrConfig.size * scale}px`,
-                    imageRendering: 'pixelated',
-                  }}
-                  className="pointer-events-none block"
-                />
-              ) : (
-                <div 
-                  style={{
-                    width: `${qrConfig.size * scale}px`,
-                    height: `${qrConfig.size * scale}px`,
-                  }}
-                  className="bg-slate-200/50 flex items-center justify-center text-xs text-slate-500"
+              {/* QR Code Container with Resize Handle */}
+              <div 
+                className="relative flex items-center justify-center flex-shrink-0"
+                style={{
+                  width: `${qrConfig.size * scale}px`,
+                  height: `${qrConfig.size * scale}px`,
+                }}
+              >
+                {previewQrUrl ? (
+                  <img
+                    src={previewQrUrl}
+                    alt="QR"
+                    draggable={false}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      imageRendering: 'pixelated',
+                    }}
+                    className="pointer-events-none block select-none"
+                  />
+                ) : (
+                  <div 
+                    className="w-full h-full bg-slate-200/50 flex items-center justify-center text-xs text-slate-500"
+                  >
+                    ...
+                  </div>
+                )}
+
+                {/* Resize Handle in Bottom-Right Corner of QR Code */}
+                <div
+                  onMouseDown={handleResizeMouseDown}
+                  onTouchStart={handleResizeTouchStart}
+                  className="resize-handle absolute -bottom-2 -right-2 w-5 h-5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-300 rounded-full flex items-center justify-center cursor-nwse-resize shadow-md transition-transform transform hover:scale-125 z-20"
+                  title="คลิกลากเพื่อย่อ-ขยายขนาด QR Code"
                 >
-                  ...
+                  <Maximize2 size={10} className="text-slate-950 transform rotate-90 pointer-events-none" />
                 </div>
-              )}
+              </div>
 
               {/* Text Below QR Code */}
               {textConfig.enabled && currentRow.text && (
@@ -438,13 +475,10 @@ export default function CanvasEditor({
                     color: textConfig.color || '#1e293b',
                     textAlign: 'center',
                     lineHeight: 1.15,
-                    maxWidth: qrConfig.envelopText 
-                      ? 'none' 
-                      : `${Math.max(qrConfig.size * 2, 80) * scale}px`,
                     whiteSpace: 'nowrap',
                     overflow: 'visible'
                   }}
-                  className="pointer-events-none select-none"
+                  className="pointer-events-none select-none px-1"
                 >
                   {currentRow.text}
                 </div>
@@ -453,15 +487,6 @@ export default function CanvasEditor({
               {/* Drag Handle Icon on Hover */}
               <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 bg-black/60 text-white rounded p-0.5 pointer-events-none transition-opacity">
                 <Move size={11} />
-              </div>
-
-              {/* Resize Handle in Bottom-Right Corner */}
-              <div
-                onMouseDown={handleResizeMouseDown}
-                className="resize-handle absolute -bottom-1.5 -right-1.5 w-5 h-5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-300 rounded-full flex items-center justify-center cursor-nwse-resize shadow-md transition-transform transform hover:scale-125 z-10"
-                title="คลิกลากเพื่อย่อ-ขยายขนาด (สามารถพิมพ์ในช่อง Size ด้านบนได้เช่นกัน)"
-              >
-                <Maximize2 size={10} className="text-slate-950 transform rotate-90" />
               </div>
             </div>
           </div>

@@ -62,15 +62,30 @@ function drawRoundedRect(ctx, x, y, width, height, radius) {
 }
 
 /**
+ * Automatically determine the optimal rendering scale to ensure quality is equal to the original or even better
+ * (300 DPI print quality, crystal clear vector text and sharp QR modules) without requiring manual quality selection.
+ */
+export function getOptimalScale(templateImage) {
+  if (!templateImage) return 2;
+  const baseW = templateImage.naturalWidth || templateImage.width || 723;
+  // If uploaded image is already ultra-high resolution (>= 2200px), 1x preserves 100% native resolution
+  if (baseW >= 2200) return 1;
+  // For medium resolution (1200 - 2200px), 2x super-samples nicely
+  if (baseW >= 1200) return 2;
+  // For standard / lower resolution templates (e.g. 723x1024), 3x yields ~2169x3072 (~300 DPI A4 print quality)
+  return 3;
+}
+
+/**
  * Render a single page with full original sharpness or high-definition scaling (Super-Sampling)
  * @param {HTMLCanvasElement} canvas Target canvas
  * @param {HTMLImageElement} templateImage Source template image
  * @param {Object} rowData { link, text }
  * @param {Object} qrConfig QR placement & style
  * @param {Object} textConfig Text style
- * @param {number} scale Resolution multiplier (1 = original size, 2 = 2x HD, 3 = 3x Ultra HD 300 DPI)
+ * @param {number} [scale] Optional resolution multiplier. If omitted, automatically uses optimal scale.
  */
-export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfig, textConfig, scale = 1) {
+export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfig, textConfig, scale) {
   if (!templateImage || !canvas) return;
 
   // Ensure web fonts are ready for crisp text rendering
@@ -82,11 +97,13 @@ export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfi
     }
   }
 
+  const actualScale = typeof scale === 'number' && scale > 0 ? scale : getOptimalScale(templateImage);
+
   const baseW = templateImage.naturalWidth || templateImage.width || 723;
   const baseH = templateImage.naturalHeight || templateImage.height || 1024;
 
-  const width = Math.round(baseW * scale);
-  const height = Math.round(baseH * scale);
+  const width = Math.round(baseW * actualScale);
+  const height = Math.round(baseH * actualScale);
 
   canvas.width = width;
   canvas.height = height;
@@ -103,11 +120,11 @@ export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfi
   if (!rowData || !rowData.link) return;
 
   // Scale all coordinates proportionally
-  const qrX = Math.round(qrConfig.x * scale);
-  const qrY = Math.round(qrConfig.y * scale);
-  const qrSize = Math.round(qrConfig.size * scale);
-  const padding = Math.round((qrConfig.cardPadding || 0) * scale);
-  const borderRadius = Math.round((qrConfig.borderRadius || 0) * scale);
+  const qrX = Math.round(qrConfig.x * actualScale);
+  const qrY = Math.round(qrConfig.y * actualScale);
+  const qrSize = Math.round(qrConfig.size * actualScale);
+  const padding = Math.round((qrConfig.cardPadding || 0) * actualScale);
+  const borderRadius = Math.round((qrConfig.borderRadius || 0) * actualScale);
 
   // 2. Generate high-resolution QR code
   const qrImg = await generateQRImage(rowData.link, {
@@ -127,8 +144,8 @@ export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfi
   let cardH = qrSize + padding * 2;
 
   const showText = textConfig.enabled && rowData.text;
-  const fSize = Math.max(1, textConfig.fontSize !== undefined ? textConfig.fontSize : 15) * scale;
-  const spacing = (textConfig.spacing !== undefined ? textConfig.spacing : 4) * scale;
+  const fSize = Math.max(1, textConfig.fontSize !== undefined ? textConfig.fontSize : 15) * actualScale;
+  const spacing = (textConfig.spacing !== undefined ? textConfig.spacing : 4) * actualScale;
   let textY = qrY + qrSize + spacing;
 
   ctx.font = `${textConfig.fontWeight || '600'} ${fSize}px ${textConfig.fontFamily || 'Prompt'}, sans-serif`;
@@ -153,15 +170,15 @@ export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfi
     ctx.fillStyle = qrConfig.bgColor || '#ffffff';
     if (qrConfig.boxShadow) {
       ctx.shadowColor = 'rgba(0,0,0,0.18)';
-      ctx.shadowBlur = 10 * scale;
-      ctx.shadowOffsetY = 4 * scale;
+      ctx.shadowBlur = 10 * actualScale;
+      ctx.shadowOffsetY = 4 * actualScale;
     }
     drawRoundedRect(ctx, cardX, cardY, cardW, cardH, borderRadius);
     ctx.fill();
 
     if (qrConfig.borderWidth > 0) {
       ctx.strokeStyle = qrConfig.borderColor || '#e2e8f0';
-      ctx.lineWidth = qrConfig.borderWidth * scale;
+      ctx.lineWidth = qrConfig.borderWidth * actualScale;
       ctx.stroke();
     }
     ctx.restore();
@@ -188,15 +205,16 @@ export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfi
 }
 
 /**
- * Render all pages and return data URLs at high definition
+ * Render all pages and return data URLs at optimal high definition
  */
-export async function renderAllPages(templateImage, batchData, qrConfig, textConfig, onProgress, scale = 2) {
+export async function renderAllPages(templateImage, batchData, qrConfig, textConfig, onProgress, scale) {
+  const actualScale = typeof scale === 'number' && scale > 0 ? scale : getOptimalScale(templateImage);
   const results = [];
   const offscreenCanvas = document.createElement('canvas');
 
   for (let i = 0; i < batchData.length; i++) {
     const row = batchData[i];
-    await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig, scale);
+    await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig, actualScale);
     const dataUrl = offscreenCanvas.toDataURL('image/png', 1.0);
     results.push({
       index: i + 1,
@@ -216,7 +234,8 @@ export async function renderAllPages(templateImage, batchData, qrConfig, textCon
 /**
  * Export all pages to a multi-page PDF with 100% lossless PNG quality
  */
-export async function exportToPDF(templateImage, batchData, qrConfig, textConfig, onProgress, scale = 2) {
+export async function exportToPDF(templateImage, batchData, qrConfig, textConfig, onProgress, scale) {
+  const actualScale = typeof scale === 'number' && scale > 0 ? scale : getOptimalScale(templateImage);
   const baseW = templateImage.naturalWidth || 723;
   const baseH = templateImage.naturalHeight || 1024;
   const isLandscape = baseW > baseH;
@@ -240,8 +259,8 @@ export async function exportToPDF(templateImage, batchData, qrConfig, textConfig
     }
 
     const row = batchData[i];
-    // Render at high resolution
-    await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig, scale);
+    // Render at optimal high resolution
+    await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig, actualScale);
 
     // Use lossless PNG to preserve 100% original sharpness without JPEG compression artifacts
     const imgData = offscreenCanvas.toDataURL('image/png');
@@ -277,13 +296,14 @@ export async function exportToPDF(templateImage, batchData, qrConfig, textConfig
 /**
  * Export all pages as high-resolution PNG images inside a ZIP file
  */
-export async function exportToZIP(templateImage, batchData, qrConfig, textConfig, onProgress, scale = 2) {
+export async function exportToZIP(templateImage, batchData, qrConfig, textConfig, onProgress, scale) {
+  const actualScale = typeof scale === 'number' && scale > 0 ? scale : getOptimalScale(templateImage);
   const zip = new JSZip();
   const offscreenCanvas = document.createElement('canvas');
 
   for (let i = 0; i < batchData.length; i++) {
     const row = batchData[i];
-    await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig, scale);
+    await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig, actualScale);
 
     // Convert canvas to lossless PNG blob
     const blob = await new Promise((resolve) => offscreenCanvas.toBlob(resolve, 'image/png', 1.0));

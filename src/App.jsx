@@ -156,13 +156,13 @@ export default function App() {
     saveTemplateImage(defaultTemplate);
   };
 
-  // Download single active page as PNG with 100% original quality
-  const handleDownloadCurrent = async (scale = 1) => {
+  // Download single active page as PNG with highest quality equal to original or better
+  const handleDownloadCurrent = async () => {
     if (!templateImg) return;
     const canvas = document.createElement('canvas');
     const currentRow = batchData[currentIndex] || { link: '', text: '' };
-    // scale = 1 ensures 100% pixel-for-pixel fidelity to the original template
-    await renderPageToCanvas(canvas, templateImg, currentRow, qrConfig, textConfig, scale);
+    // Automatically renders with optimal resolution equal to original or better (Lossless PNG)
+    await renderPageToCanvas(canvas, templateImg, currentRow, qrConfig, textConfig);
     const link = document.createElement('a');
     const safeName = (currentRow.text || `page_${currentIndex + 1}`).replace(/[^a-zA-Z0-9_-]/g, '_');
     link.download = `QR_${safeName}.png`;
@@ -170,13 +170,12 @@ export default function App() {
     link.click();
   };
 
-  // Prepare and trigger browser print for all pages
-  const handleTriggerPrint = async (scale = 2) => {
+  // Prepare and trigger browser print for all pages with optimal high definition
+  const handleTriggerPrint = async () => {
     if (!templateImg || batchData.length === 0) return;
     setIsPreparingPrint(true);
     try {
-      const printScale = typeof scale === 'number' ? scale : 2;
-      const pages = await renderAllPages(templateImg, batchData, qrConfig, textConfig, null, printScale);
+      const pages = await renderAllPages(templateImg, batchData, qrConfig, textConfig, null);
       setPrintPages(pages);
 
       // Allow DOM to update before opening print dialog
