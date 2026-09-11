@@ -156,16 +156,16 @@ export default function App() {
     saveTemplateImage(defaultTemplate);
   };
 
-  // Download single active page as PNG with highest quality equal to original or better
+  // Download single active page as PNG with 600 DPI ultra-high quality
   const handleDownloadCurrent = async () => {
     if (!templateImg) return;
     const canvas = document.createElement('canvas');
     const currentRow = batchData[currentIndex] || { link: '', text: '' };
-    // Automatically renders with optimal resolution equal to original or better (Lossless PNG)
+    // Automatically renders with 600 DPI resolution (Lossless PNG)
     await renderPageToCanvas(canvas, templateImg, currentRow, qrConfig, textConfig);
     const link = document.createElement('a');
     const safeName = (currentRow.text || `page_${currentIndex + 1}`).replace(/[^a-zA-Z0-9_-]/g, '_');
-    link.download = `QR_${safeName}.png`;
+    link.download = `QR_${safeName}_600DPI.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
   };

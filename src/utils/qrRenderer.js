@@ -62,18 +62,27 @@ function drawRoundedRect(ctx, x, y, width, height, radius) {
 }
 
 /**
+ * Calculate the exact scale factor to achieve 600 DPI on standard A4 paper (210mm x 297mm)
+ * 1 inch = 25.4mm
+ * Width at 600 DPI = (210 / 25.4) * 600 ≈ 4,960 px
+ * Height at 600 DPI = (297 / 25.4) * 600 ≈ 7,016 px
+ */
+export function get600DpiScale(templateImage) {
+  if (!templateImage) return 4;
+  const baseW = templateImage.naturalWidth || templateImage.width || 723;
+  const baseH = templateImage.naturalHeight || templateImage.height || 1024;
+  const isLandscape = baseW > baseH;
+  const targetW = isLandscape ? 7016 : 4960;
+  const scale = targetW / baseW;
+  return Math.max(1, Math.min(8, Number(scale.toFixed(2))));
+}
+
+/**
  * Automatically determine the optimal rendering scale to ensure quality is equal to the original or even better
- * (300 DPI print quality, crystal clear vector text and sharp QR modules) without requiring manual quality selection.
+ * (300 to 600 DPI print quality, crystal clear vector text and sharp QR modules)
  */
 export function getOptimalScale(templateImage) {
-  if (!templateImage) return 2;
-  const baseW = templateImage.naturalWidth || templateImage.width || 723;
-  // If uploaded image is already ultra-high resolution (>= 2200px), 1x preserves 100% native resolution
-  if (baseW >= 2200) return 1;
-  // For medium resolution (1200 - 2200px), 2x super-samples nicely
-  if (baseW >= 1200) return 2;
-  // For standard / lower resolution templates (e.g. 723x1024), 3x yields ~2169x3072 (~300 DPI A4 print quality)
-  return 3;
+  return get600DpiScale(templateImage);
 }
 
 /**
@@ -205,17 +214,17 @@ export async function renderPageToCanvas(canvas, templateImage, rowData, qrConfi
 }
 
 /**
- * Render all pages and return data URLs at optimal high definition
+ * Render all pages and return data URLs for screen preview
  */
-export async function renderAllPages(templateImage, batchData, qrConfig, textConfig, onProgress, scale) {
-  const actualScale = typeof scale === 'number' && scale > 0 ? scale : getOptimalScale(templateImage);
+export async function renderAllPages(templateImage, batchData, qrConfig, textConfig, onProgress, scale = 1.5) {
+  const actualScale = typeof scale === 'number' && scale > 0 ? scale : 1.5;
   const results = [];
   const offscreenCanvas = document.createElement('canvas');
 
   for (let i = 0; i < batchData.length; i++) {
     const row = batchData[i];
     await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig, actualScale);
-    const dataUrl = offscreenCanvas.toDataURL('image/png', 1.0);
+    const dataUrl = offscreenCanvas.toDataURL('image/png', 0.95);
     results.push({
       index: i + 1,
       link: row.link,
@@ -224,18 +233,21 @@ export async function renderAllPages(templateImage, batchData, qrConfig, textCon
     });
 
     if (onProgress) {
-      onProgress(i + 1, batchData.length);
+      onProgress(i + 1, batchData.length, `กำลังโหลดพรีวิวหน้า ${i + 1} / ${batchData.length}...`);
     }
+
+    // Yield to the browser event loop so UI paints progress
+    await new Promise((resolve) => setTimeout(resolve, 15));
   }
 
   return results;
 }
 
 /**
- * Export all pages to a multi-page PDF with 100% lossless PNG quality
+ * Export all pages to a multi-page PDF with 600 DPI ultra-high print quality (zero freeze)
  */
 export async function exportToPDF(templateImage, batchData, qrConfig, textConfig, onProgress, scale) {
-  const actualScale = typeof scale === 'number' && scale > 0 ? scale : getOptimalScale(templateImage);
+  const actualScale = typeof scale === 'number' && scale > 0 ? scale : get600DpiScale(templateImage);
   const baseW = templateImage.naturalWidth || 723;
   const baseH = templateImage.naturalHeight || 1024;
   const isLandscape = baseW > baseH;
@@ -251,6 +263,23 @@ export async function exportToPDF(templateImage, batchData, qrConfig, textConfig
   const pdfWidth = pdf.internal.pageSize.getWidth();
   const pdfHeight = pdf.internal.pageSize.getHeight();
 
+  // Aspect fit inside A4 page
+  const imgAspect = baseW / baseH;
+  const pageAspect = pdfWidth / pdfHeight;
+
+  let renderW, renderH, renderX, renderY;
+  if (imgAspect > pageAspect) {
+    renderW = pdfWidth;
+    renderH = pdfWidth / imgAspect;
+    renderX = 0;
+    renderY = (pdfHeight - renderH) / 2;
+  } else {
+    renderH = pdfHeight;
+    renderW = pdfHeight * imgAspect;
+    renderX = (pdfWidth - renderW) / 2;
+    renderY = 0;
+  }
+
   const offscreenCanvas = document.createElement('canvas');
 
   for (let i = 0; i < batchData.length; i++) {
@@ -258,65 +287,65 @@ export async function exportToPDF(templateImage, batchData, qrConfig, textConfig
       pdf.addPage();
     }
 
+    if (onProgress) {
+      onProgress(i + 1, batchData.length, `กำลังสร้างหน้า ${i + 1} / ${batchData.length} (ความละเอียด 600 DPI)...`);
+    }
+
+    // Critical: yield to event loop so the progress bar updates and browser never freezes
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
     const row = batchData[i];
-    // Render at optimal high resolution
+    // Render at true 600 DPI
     await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig, actualScale);
 
-    // Use lossless PNG to preserve 100% original sharpness without JPEG compression artifacts
-    const imgData = offscreenCanvas.toDataURL('image/png');
+    // Encode to high-quality JPEG 0.98 for fast hardware-accelerated embedding without pure-JS deflate freeze
+    const imgData = offscreenCanvas.toDataURL('image/jpeg', 0.98);
 
-    // Calculate aspect fit inside A4 page
-    const imgAspect = baseW / baseH;
-    const pageAspect = pdfWidth / pdfHeight;
-
-    let renderW, renderH, renderX, renderY;
-    if (imgAspect > pageAspect) {
-      renderW = pdfWidth;
-      renderH = pdfWidth / imgAspect;
-      renderX = 0;
-      renderY = (pdfHeight - renderH) / 2;
-    } else {
-      renderH = pdfHeight;
-      renderW = pdfHeight * imgAspect;
-      renderX = (pdfWidth - renderW) / 2;
-      renderY = 0;
-    }
-
-    // Use SLOW for highest quality lossless image embedding in jsPDF
-    pdf.addImage(imgData, 'PNG', renderX, renderY, renderW, renderH, undefined, 'SLOW');
-
-    if (onProgress) {
-      onProgress(i + 1, batchData.length);
-    }
+    pdf.addImage(imgData, 'JPEG', renderX, renderY, renderW, renderH, undefined, 'FAST');
   }
 
-  pdf.save(`QR_Batch_Pages_HQ_${Date.now()}.pdf`);
+  if (onProgress) {
+    onProgress(batchData.length, batchData.length, 'กำลังบันทึกไฟล์ PDF 600 DPI...');
+  }
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  pdf.save(`QR_Batch_Pages_600DPI_${Date.now()}.pdf`);
 }
 
 /**
- * Export all pages as high-resolution PNG images inside a ZIP file
+ * Export all pages as 600 DPI PNG images inside a ZIP file
  */
 export async function exportToZIP(templateImage, batchData, qrConfig, textConfig, onProgress, scale) {
-  const actualScale = typeof scale === 'number' && scale > 0 ? scale : getOptimalScale(templateImage);
+  const actualScale = typeof scale === 'number' && scale > 0 ? scale : get600DpiScale(templateImage);
   const zip = new JSZip();
   const offscreenCanvas = document.createElement('canvas');
 
   for (let i = 0; i < batchData.length; i++) {
+    if (onProgress) {
+      onProgress(i + 1, batchData.length, `กำลังเรนเดอร์ภาพหน้า ${i + 1} / ${batchData.length} (600 DPI)...`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
     const row = batchData[i];
     await renderPageToCanvas(offscreenCanvas, templateImage, row, qrConfig, textConfig, actualScale);
 
     // Convert canvas to lossless PNG blob
     const blob = await new Promise((resolve) => offscreenCanvas.toBlob(resolve, 'image/png', 1.0));
     const safeText = (row.text || `item_${i+1}`).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filename = `page_${String(i + 1).padStart(3, '0')}_${safeText}.png`;
+    const filename = `page_${String(i + 1).padStart(3, '0')}_${safeText}_600DPI.png`;
 
     zip.file(filename, blob);
-
-    if (onProgress) {
-      onProgress(i + 1, batchData.length);
-    }
   }
 
-  const content = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
-  saveAs(content, `QR_Batch_Images_HQ_${Date.now()}.zip`);
+  if (onProgress) {
+    onProgress(batchData.length, batchData.length, 'กำลังบีบอัดไฟล์ ZIP (600 DPI)...');
+  }
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  const content = await zip.generateAsync({ 
+    type: 'blob', 
+    compression: 'DEFLATE', 
+    compressionOptions: { level: 4 } 
+  });
+  saveAs(content, `QR_Batch_Images_600DPI_${Date.now()}.zip`);
 }

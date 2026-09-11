@@ -60,10 +60,10 @@ export default function PrintPreviewModal({
 
   const handleExportPDF = async () => {
     setLoading(true);
-    setProgress({ current: 0, total: batchData.length, status: 'กำลังสร้างเอกสาร PDF คุณภาพสูงเท่าต้นฉบับ (Lossless)...' });
+    setProgress({ current: 0, total: batchData.length, status: 'กำลังเตรียมสร้างเอกสาร PDF (600 DPI)...' });
     try {
-      await exportToPDF(templateImg, batchData, qrConfig, textConfig, (curr, total) => {
-        setProgress({ current: curr, total, status: `กำลังเพิ่มหน้า ${curr} / ${total} ลงใน PDF` });
+      await exportToPDF(templateImg, batchData, qrConfig, textConfig, (curr, total, statusText) => {
+        setProgress({ current: curr, total, status: statusText || `กำลังสร้างหน้า ${curr} / ${total} (600 DPI)...` });
       });
     } catch (e) {
       alert('เกิดข้อผิดพลาดในการสร้าง PDF: ' + e.message);
@@ -74,10 +74,10 @@ export default function PrintPreviewModal({
 
   const handleExportZIP = async () => {
     setLoading(true);
-    setProgress({ current: 0, total: batchData.length, status: 'กำลังรวมไฟล์รูปภาพ PNG คุณภาพสูงเท่าต้นฉบับ...' });
+    setProgress({ current: 0, total: batchData.length, status: 'กำลังเตรียมรวมไฟล์รูปภาพ ZIP (600 DPI)...' });
     try {
-      await exportToZIP(templateImg, batchData, qrConfig, textConfig, (curr, total) => {
-        setProgress({ current: curr, total, status: `กำลังบันทึกรูปภาพหน้า ${curr} / ${total}` });
+      await exportToZIP(templateImg, batchData, qrConfig, textConfig, (curr, total, statusText) => {
+        setProgress({ current: curr, total, status: statusText || `กำลังบันทึกรูปภาพหน้า ${curr} / ${total} (600 DPI)...` });
       });
     } catch (e) {
       alert('เกิดข้อผิดพลาดในการรวม ZIP: ' + e.message);
@@ -101,15 +101,15 @@ export default function PrintPreviewModal({
                 {batchData.length} หน้า
               </span>
             </h2>
-            <p className="text-xs text-slate-400">ภาพคมชัดเท่าต้นฉบับ 100% (Ultra HD Lossless) พร้อมส่งออก PDF และ ZIP</p>
+            <p className="text-xs text-slate-400">ภาพคมชัดระดับสิ่งพิมพ์ 600 DPI (Ultra HD) พร้อมส่งออก PDF และ ZIP</p>
           </div>
         </div>
 
         {/* Action Buttons & Quality Badge */}
         <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="hidden sm:flex items-center gap-1.5 bg-emerald-950/70 border border-emerald-700/60 text-emerald-300 text-xs px-3 py-1.5 rounded-xl shadow-sm font-medium">
-            <Sparkles size={13} className="text-emerald-400" />
-            <span>ความคมชัด: เท่าต้นฉบับหรือดีกว่า (Ultra HD)</span>
+          <div className="hidden sm:flex items-center gap-1.5 bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 text-xs px-3 py-1.5 rounded-xl shadow-sm font-semibold">
+            <Sparkles size={14} className="text-emerald-400" />
+            <span>ความละเอียดมาตรฐาน 600 DPI (Ultra HD)</span>
           </div>
 
           <button
